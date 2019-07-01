@@ -4,6 +4,8 @@ import re
 import gym
 import numpy as np
 
+from gym.spaces import Discrete
+
 from pprint import pprint
 
 from api import ApiWrapper
@@ -68,6 +70,7 @@ class GemelEnv(gym.Env):
         # convert to NumPy n-dimensional array
         return np.asarray(ids_info)
 
+    @property
     def _simulations_sorted_by_id(self):
         return sorted((host for _, hosts in self.simulations.items() for host in hosts), key=lambda x: x["id"])
 
@@ -85,7 +88,7 @@ class GemelEnv(gym.Env):
         vnet_names = [x["name"] for x in self.vnets]
 
         # get a list of vnet names for each host
-        sorted_list = [vnet_status[host["mac"]] for host in self._simulations_sorted_by_id()]
+        sorted_list = [vnet_status[host["mac"]] for host in self._simulations_sorted_by_id]
 
         # use vnet "number" instead of vnet name and convert to NumPy array
         return np.asarray([vnet_names.index(name) for name in sorted_list])
@@ -123,6 +126,8 @@ class GemelEnv(gym.Env):
         # fetch vnet list
         self.vnets = ApiWrapper.vnet_list()
 
+        self.action_space = Discrete(len(self._simulations_sorted_by_id) + 1)
+
         self.simulations = sims_list
         self.host_count = idx
         self.ip_id_map = ip_id_map
@@ -138,11 +143,27 @@ class GemelEnv(gym.Env):
         """
         Moves all hosts to the initial virtual-net (lowest security)
         """
-        for host in self._simulations_sorted_by_id():
+        for host in self._simulations_sorted_by_id:
                 ApiWrapper.set_vnet(host["mac"], self.vnets[0]["name"])
 
+    # noinspection PyRedundantParentheses
     def step(self, action):
-        pass
+
+        assert isinstance(action, int)
+
+        sims = self._simulations_sorted_by_id
+
+        # the NOP action
+        if action == len(sims):
+            return (self._get_state(),)
+
+        # toggle a given host
+        ApiWrapper.toggle(sims[action]["mac"])
+
+        return self._get_state()
+
+    def state(self):
+        return self._get_state()
 
     def reset(self):
         self._init_net_info()
