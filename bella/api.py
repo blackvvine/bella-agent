@@ -5,22 +5,27 @@ from bella.config import HALSEY_BASE_URL
 
 class ApiWrapper(object):
 
-    TOGGLE = HALSEY_BASE_URL + "/vnet/toggle"
     STATS = HALSEY_BASE_URL + "/sim/attack"
     QOS = HALSEY_BASE_URL + "/sim/qos"
     HIST = HALSEY_BASE_URL + "/ids/hist"
     VNET = HALSEY_BASE_URL + "/vnet/get?host="
 
-    EVENTS = HALSEY_BASE_URL + "/ids/events"
-    ARP = HALSEY_BASE_URL + "/topo/arp"
-    SIMS = HALSEY_BASE_URL + "/topo/sims"
+    EVENTS_LIST = HALSEY_BASE_URL + "/v1/ids/events"
+    ARP = HALSEY_BASE_URL + "/v1/topo/arp"
+    SIMULATIONS_LIST = HALSEY_BASE_URL + "/v1/topo/sims"
+    ALERTS_INFO = HALSEY_BASE_URL + "/v1/info/alerts"
+
+    VNETS_TOGGLE = HALSEY_BASE_URL + "/vnet/toggle"
+    VNETS_STATUS = HALSEY_BASE_URL + "/v1/vnet/status"
+    VNETS_SET = HALSEY_BASE_URL + "/v1/vnet/set"
+    VNETS_LIST = HALSEY_BASE_URL + "/v1/vnet/list"
 
     @classmethod
     def get_events(cls, interval=60):
         """
         :param interval: get events for last X seconds
         """
-        return requests.get(cls.EVENTS, {"interval": interval}).json()
+        return requests.get(cls.EVENTS_LIST, {"interval": interval}).json()
 
     @classmethod
     def get_arp_table(cls):
@@ -28,6 +33,26 @@ class ApiWrapper(object):
 
     @classmethod
     def get_sims(cls):
-        return requests.get(cls.SIMS).json()
+        return requests.get(cls.SIMULATIONS_LIST).json()
+
+    @classmethod
+    def get_known_alert(cls):
+        return requests.get(cls.ALERTS_INFO).json()
+
+    @classmethod
+    def vnet_list(cls):
+        return requests.get(cls.VNETS_LIST).json()
+
+    @classmethod
+    def vnet_status(cls):
+        return requests.get(cls.VNETS_STATUS).json()
+
+    @classmethod
+    def toggle(cls, mac):
+        return requests.get(cls.VNETS_TOGGLE, {'host': mac}).json()
+
+    @classmethod
+    def set_vnet(cls, mac, vnet):
+        return requests.get(cls.VNETS_SET, {'host': mac, 'vnet': vnet}).json()
 
 

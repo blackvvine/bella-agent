@@ -22,3 +22,4 @@ def _get_yaml_conf():
 HALSEY_BASE_URL = _get_yaml_conf()["base-url"]
 
 MAX_ALERTS_PER_HOST = _get_yaml_conf()["max-alerts-per-host"]
+

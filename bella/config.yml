@@ -4,8 +4,3 @@ base-url: http://halsey.einstein.eeman.me:8080
 
 max-alerts-per-host: 10
 
-alerts:
-  - name: SYN attack
-    id: 100
-  - name: PING flood
-    id: 101
