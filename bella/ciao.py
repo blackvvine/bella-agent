@@ -23,7 +23,7 @@ class GemelEnv(gym.Env):
     class Reward(enum.Enum):
         PLACING = 1
 
-    def __init__(self, reward=Reward.PLACING, max_steps=MAX_STEPS_PER_EPISODE, max_alerts=MAX_ALERTS_PER_HOST):
+    def __init__(self, reward=Reward.PLACING, max_steps=MAX_STEPS_PER_EPISODE, max_alerts=MAX_ALERTS_PER_HOST, interval=10):
 
         self.simulations = None
         self.ip_id_map = None
@@ -37,10 +37,11 @@ class GemelEnv(gym.Env):
         self.max_alerts_per_host = max_alerts
 
         self._init_net_info()
+        self._interval_ = interval
 
     @property
     def _interval(self):
-        return 10
+        return self._interval_
 
     def _fixate_feature_size(self, alert_list):
         cut = alert_list[-self.max_alerts_per_host:]
@@ -240,8 +241,8 @@ class GemelEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    env = GemelEnv()
-    pprint(env.state()[1])
+    env = GemelEnv(interval=20)
+    pprint(env.state())
 
 
 
