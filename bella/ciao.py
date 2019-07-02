@@ -115,9 +115,10 @@ class GemelEnv(gym.Env):
 
         # assign a zero-based ID to each mac-address and store
         # the mapping
-        for _, hosts in sims_list.items():
+        for host_type, hosts in sims_list.items():
             for host in hosts:
                 host["id"] = idx
+                host["type"] = host_type
                 ip_id_map[host["overlay_ip"]] = idx
                 idx += 1
 
@@ -131,12 +132,12 @@ class GemelEnv(gym.Env):
         # fetch vnet list
         self.vnets = ApiWrapper.vnet_list()
 
-        self.action_space = Discrete(len(self._simulations_sorted_by_id) + 1)
-
         self.simulations = sims_list
         self.host_count = idx
         self.ip_id_map = ip_id_map
         self.known_alerts = alerts
+
+        self.action_space = Discrete(len(self._simulations_sorted_by_id) + 1)
 
     def _get_mac_id(self, mac):
         for x in ((ip, mac) for ip, macs in self.arp_table.items() for mac in macs):
@@ -172,8 +173,13 @@ class GemelEnv(gym.Env):
 
     def _get_reward(self):
         if self.reward == GemelEnv.Reward.PLACING:
-            for vnet in self._get_vnet_status():
-                vnet
+            sims = self._simulations_sorted_by_id
+            reward = 0
+            for idx, vnet_id in enumerate(self._get_vnet_status()):
+                host = sims[idx]
+                vnet = self.vnets[vnet_id]
+                reward += (-1 if host["type"] == "benign" else +1) * vnet["security_level"]
+            return reward
         else:
             raise Exception(f"Unknown reward scheme {self.reward}")
 
@@ -192,5 +198,12 @@ class GemelEnv(gym.Env):
 
 if __name__ == "__main__":
     env = GemelEnv()
-    env.reset()
+    state = env.reset()
+    print(state)
+    state, reward = env.step(0)
+    print(state, f"r={reward}")
+    state, reward = env.step(0)
+    print(state, f"r={reward}")
+    state, reward = env.step(1)
+    print(state, f"r={reward}")
 
