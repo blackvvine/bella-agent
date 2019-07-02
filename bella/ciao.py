@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import enum
 import re
 import gym
 import numpy as np
@@ -20,12 +20,17 @@ class GemelEnv(gym.Env):
 
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    class Reward(enum.Enum):
+        PLACING = 1
+
+    def __init__(self, reward=Reward.PLACING):
         self.simulations = None
         self.ip_id_map = None
         self.arp_table = None
         self.known_alerts = None
         self.vnets = None
+        self.reward = reward
+        self.current_step = 0
 
     @property
     def _interval(self):
@@ -146,21 +151,31 @@ class GemelEnv(gym.Env):
         for host in self._simulations_sorted_by_id:
                 ApiWrapper.set_vnet(host["mac"], self.vnets[0]["name"])
 
+    def _apply_step(self, action):
+        sims = self._simulations_sorted_by_id
+        ApiWrapper.toggle(sims[action]["mac"])
+        self.current_step += 1
+
     # noinspection PyRedundantParentheses
     def step(self, action):
 
         assert isinstance(action, int)
 
-        sims = self._simulations_sorted_by_id
-
         # the NOP action
-        if action == len(sims):
-            return (self._get_state(),)
+        if action == len(self._simulations_sorted_by_id):
+            return (self._get_state(), self._get_reward())
 
         # toggle a given host
-        ApiWrapper.toggle(sims[action]["mac"])
+        self._apply_step(action)
 
-        return self._get_state()
+        return (self._get_state(), self._get_reward())
+
+    def _get_reward(self):
+        if self.reward == GemelEnv.Reward.PLACING:
+            for vnet in self._get_vnet_status():
+                vnet
+        else:
+            raise Exception(f"Unknown reward scheme {self.reward}")
 
     def state(self):
         return self._get_state()
@@ -168,6 +183,7 @@ class GemelEnv(gym.Env):
     def reset(self):
         self._init_net_info()
         self._reset_all_hosts_vnet()
+        self.current_step = 0
         return self._get_state()
 
     def render(self, mode='human', close=False):
