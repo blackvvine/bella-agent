@@ -23,3 +23,5 @@ HALSEY_BASE_URL = _get_yaml_conf()["base-url"]
 
 MAX_ALERTS_PER_HOST = _get_yaml_conf()["max-alerts-per-host"]
 
+MAX_STEPS_PER_EPISODE = _get_yaml_conf()["max-steps-per-episode"]
+

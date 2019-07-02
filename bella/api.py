@@ -1,6 +1,6 @@
 import requests
 
-from .config import HALSEY_BASE_URL
+from bella.config import HALSEY_BASE_URL
 
 
 class ApiWrapper(object):

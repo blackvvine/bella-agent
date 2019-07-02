@@ -8,8 +8,8 @@ from gym.spaces import Discrete
 
 from pprint import pprint
 
-from .api import ApiWrapper
-from .config import MAX_ALERTS_PER_HOST
+from bella.api import ApiWrapper
+from bella.config import MAX_ALERTS_PER_HOST, MAX_STEPS_PER_EPISODE
 
 
 class GemelState(object):
@@ -23,18 +23,29 @@ class GemelEnv(gym.Env):
     class Reward(enum.Enum):
         PLACING = 1
 
-    def __init__(self, reward=Reward.PLACING):
+    def __init__(self, reward=Reward.PLACING, max_steps=MAX_STEPS_PER_EPISODE, max_alerts=MAX_ALERTS_PER_HOST):
+
         self.simulations = None
         self.ip_id_map = None
         self.arp_table = None
         self.known_alerts = None
         self.vnets = None
+
         self.reward = reward
         self.current_step = 0
+        self.max_steps = max_steps
+        self.max_alerts_per_host = max_alerts
+
+        self._init_net_info()
 
     @property
     def _interval(self):
-        return 600
+        return 10
+
+    def _fixate_feature_size(self, alert_list):
+        cut = alert_list[-self.max_alerts_per_host:]
+        padded = cut + (self.max_alerts_per_host - len(cut)) * [0]
+        return padded
 
     def _fetch_alerts(self):
         """
@@ -50,7 +61,7 @@ class GemelEnv(gym.Env):
         for src_ip, alert_code in alerts:
             obs[src_ip] = obs.get(src_ip, []) + [alert_code]
 
-        return dict([(k, v[-MAX_ALERTS_PER_HOST:]) for k, v in obs.items()])
+        return obs
 
     def _get_ids_observations(self):
         """
@@ -59,6 +70,13 @@ class GemelEnv(gym.Env):
 
         # get list of alerts per host
         ids_info = {self.ip_id_map[k]: v for k, v in self._fetch_alerts().items() if k in self.ip_id_map}
+
+        # add empty entries for absent hosts in the IDS alerts
+        empty_lists = {k: [] for k in self.ip_id_map.values() if k not in ids_info.keys()}
+        ids_info = {**ids_info, **empty_lists}
+
+        # fix feature size (cut if more, pad if less)
+        ids_info = {k: self._fixate_feature_size(v) for k, v in ids_info.items()}
 
         # convert to sorted list
         ids_info = [ids_info[k] for k in sorted(ids_info.keys())]
@@ -76,7 +94,7 @@ class GemelEnv(gym.Env):
         return np.asarray(ids_info)
 
     @property
-    def _simulations_sorted_by_id(self):
+    def _hosts_sorted_by_id(self):
         return sorted((host for _, hosts in self.simulations.items() for host in hosts), key=lambda x: x["id"])
 
     def _get_vnet_status(self):
@@ -93,7 +111,7 @@ class GemelEnv(gym.Env):
         vnet_names = [x["name"] for x in self.vnets]
 
         # get a list of vnet names for each host
-        sorted_list = [vnet_status[host["mac"]] for host in self._simulations_sorted_by_id]
+        sorted_list = [vnet_status[host["mac"]] for host in self._hosts_sorted_by_id]
 
         # use vnet "number" instead of vnet name and convert to NumPy array
         return np.asarray([vnet_names.index(name) for name in sorted_list])
@@ -137,7 +155,7 @@ class GemelEnv(gym.Env):
         self.ip_id_map = ip_id_map
         self.known_alerts = alerts
 
-        self.action_space = Discrete(len(self._simulations_sorted_by_id) + 1)
+        self.action_space = Discrete(len(self._hosts_sorted_by_id) + 1)
 
     def _get_mac_id(self, mac):
         for x in ((ip, mac) for ip, macs in self.arp_table.items() for mac in macs):
@@ -149,39 +167,64 @@ class GemelEnv(gym.Env):
         """
         Moves all hosts to the initial virtual-net (lowest security)
         """
-        for host in self._simulations_sorted_by_id:
+        for host in self._hosts_sorted_by_id:
                 ApiWrapper.set_vnet(host["mac"], self.vnets[0]["name"])
 
-    def _apply_step(self, action):
-        sims = self._simulations_sorted_by_id
+    def _apply_action(self, action):
+        sims = self._hosts_sorted_by_id
         ApiWrapper.toggle(sims[action]["mac"])
-        self.current_step += 1
+
+    def _is_terminal(self):
+        """
+        Returns whether the "terminal" state has reached. In our current
+        problem statement, this is a continuous space so "terminal" is
+        just a bad name for max steps reached
+        """
+        return self.current_step > self.max_steps
 
     # noinspection PyRedundantParentheses
     def step(self, action):
+        """
+        :param action:
+        :return: 3-tuple containing:
+            0 - new state
+            1 - reward from the action taken
+            2 - whether the new state is terminal
+        """
+
+        if isinstance(action, np.integer):
+            action = int(action)
 
         assert isinstance(action, int)
 
-        # the NOP action
-        if action == len(self._simulations_sorted_by_id):
-            return (self._get_state(), self._get_reward())
+        self.current_step += 1
 
-        # toggle a given host
-        self._apply_step(action)
+        # the non-NOP action
+        if action < len(self._hosts_sorted_by_id):
+            # apply the toggle action
+            self._apply_action(action)
 
-        return (self._get_state(), self._get_reward())
+        return (self._get_state(), self._get_reward(), self._is_terminal())
 
     def _get_reward(self):
         if self.reward == GemelEnv.Reward.PLACING:
-            sims = self._simulations_sorted_by_id
-            reward = 0
+            sims = self._hosts_sorted_by_id
+            reward_ = 0
             for idx, vnet_id in enumerate(self._get_vnet_status()):
                 host = sims[idx]
                 vnet = self.vnets[vnet_id]
-                reward += (-1 if host["type"] == "benign" else +1) * vnet["security_level"]
-            return reward
+                reward_ += (-1 if host["type"] == "benign" else +1) * vnet["security_level"]
+            return reward_
         else:
             raise Exception(f"Unknown reward scheme {self.reward}")
+
+    def observation_shape(self):
+
+        flat_size = len(self._hosts_sorted_by_id) + \
+               len(self._hosts_sorted_by_id) * len(self.known_alerts) * self.max_alerts_per_host
+
+        # noinspection PyRedundantParentheses
+        return (flat_size,)
 
     def state(self):
         return self._get_state()
@@ -198,12 +241,7 @@ class GemelEnv(gym.Env):
 
 if __name__ == "__main__":
     env = GemelEnv()
-    state = env.reset()
-    print(state)
-    state, reward = env.step(0)
-    print(state, f"r={reward}")
-    state, reward = env.step(0)
-    print(state, f"r={reward}")
-    state, reward = env.step(1)
-    print(state, f"r={reward}")
+    pprint(env.state()[1])
+
+
 

@@ -4,3 +4,5 @@ base-url: http://halsey.einstein.eeman.me:8080
 
 max-alerts-per-host: 10
 
+max-steps-per-episode: 100
+
