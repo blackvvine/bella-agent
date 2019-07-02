@@ -8,8 +8,8 @@ from gym.spaces import Discrete
 
 from pprint import pprint
 
-from api import ApiWrapper
-from config import MAX_ALERTS_PER_HOST
+from .api import ApiWrapper
+from .config import MAX_ALERTS_PER_HOST
 
 
 class GemelState(object):
