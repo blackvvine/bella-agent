@@ -205,13 +205,15 @@ class GemelEnv(gym.Env):
             # apply the toggle action
             self._apply_action(action)
 
-        return (self._get_state(), self._get_reward(), self._is_terminal())
+        state = self._get_state()
 
-    def _get_reward(self):
+        return (state, self._get_reward(state[0]), self._is_terminal())
+
+    def _get_reward(self, state):
         if self.reward == GemelEnv.Reward.PLACING:
             sims = self._hosts_sorted_by_id
             reward_ = 0
-            for idx, vnet_id in enumerate(self._get_vnet_status()):
+            for idx, vnet_id in enumerate(state):
                 host = sims[idx]
                 vnet = self.vnets[vnet_id]
                 reward_ += (-1 if host["type"] == "benign" else +1) * vnet["security_level"]
@@ -233,7 +235,7 @@ class GemelEnv(gym.Env):
     def reset(self):
         self._init_net_info()
         self._reset_all_hosts_vnet()
-        self.current_step = 0
+        self.current_step = 1
         return self._get_state()
 
     def render(self, mode='human', close=False):
