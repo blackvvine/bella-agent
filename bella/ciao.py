@@ -17,13 +17,29 @@ class GemelState(object):
 
 
 class GemelEnv(gym.Env):
+    """
+    OpenAI Gym implementation of the Gemel SDN
+    """
 
     metadata = {'render.modes': ['human']}
 
     class Reward(enum.Enum):
+
+        # reward based on ground truth
         PLACING = 1
 
-    def __init__(self, reward=Reward.PLACING, max_steps=MAX_STEPS_PER_EPISODE, max_alerts=MAX_ALERTS_PER_HOST, interval=10):
+    class ActionSpace(enum.Enum):
+
+        # having one toggle button per host
+        TOGGLE = 0
+
+        # having two buttons per host for increase/decrease security
+        DOUBLE_BUTTON = 1
+
+    def __init__(self, reward=Reward.PLACING,
+                 actions=ActionSpace.TOGGLE,
+                 max_steps=MAX_STEPS_PER_EPISODE,
+                 max_alerts=MAX_ALERTS_PER_HOST, interval=10):
 
         self.simulations = None
         self.ip_id_map = None
@@ -31,13 +47,25 @@ class GemelEnv(gym.Env):
         self.known_alerts = None
         self.vnets = None
 
+        self.actions = actions
         self.reward = reward
-        self.current_step = 0
+
         self.max_steps = max_steps
         self.max_alerts_per_host = max_alerts
 
+        # fetch init info
         self._init_net_info()
         self._interval_ = interval
+
+        # state
+        self.current_state = None
+        self.current_step = 0
+
+        # action space
+        self.action_space = {
+            GemelEnv.ActionSpace.TOGGLE: Discrete(len(self._hosts_sorted_by_id) + 1),
+            GemelEnv.ActionSpace.DOUBLE_BUTTON: Discrete(2 * len(self._hosts_sorted_by_id) + 1)
+        }[self.actions]
 
     @property
     def _interval(self):
@@ -156,8 +184,6 @@ class GemelEnv(gym.Env):
         self.ip_id_map = ip_id_map
         self.known_alerts = alerts
 
-        self.action_space = Discrete(len(self._hosts_sorted_by_id) + 1)
-
     def _get_mac_id(self, mac):
         for x in ((ip, mac) for ip, macs in self.arp_table.items() for mac in macs):
             if x[1] == mac:
@@ -172,8 +198,28 @@ class GemelEnv(gym.Env):
                 ApiWrapper.set_vnet(host["mac"], self.vnets[0]["name"])
 
     def _apply_action(self, action):
-        sims = self._hosts_sorted_by_id
-        ApiWrapper.toggle(sims[action]["mac"])
+
+        if self.actions == GemelEnv.ActionSpace.TOGGLE:
+
+            sims = self._hosts_sorted_by_id
+            ApiWrapper.toggle(sims[action]["mac"])
+
+        elif self.actions == GemelEnv.ActionSpace.DOUBLE_BUTTON:
+
+            target_host = action // 2
+            more_security = bool(action % 2)
+
+            _host_cur_vn = self.current_state[0][target_host]
+
+            if more_security:
+                if _host_cur_vn != len(self.vnets) - 1:
+                    ApiWrapper.set_vnet(self._hosts_sorted_by_id[target_host]["mac"], self.vnets[_host_cur_vn + 1]["name"])
+            else:
+                if _host_cur_vn > 0:
+                    ApiWrapper.set_vnet(self._hosts_sorted_by_id[target_host]["mac"], self.vnets[_host_cur_vn - 1]["name"])
+
+        else:
+            raise Exception()
 
     def _is_terminal(self):
         """
@@ -201,15 +247,18 @@ class GemelEnv(gym.Env):
         self.current_step += 1
 
         # the non-NOP action
-        if action < len(self._hosts_sorted_by_id):
+        if action < self.action_space.n - 1:
             # apply the toggle action
             self._apply_action(action)
 
-        state = self._get_state()
+        self.current_state = self._get_state()
 
-        return (state, self._get_reward(state[0]), self._is_terminal())
+        return (self.current_state, self._get_reward(), self._is_terminal())
 
-    def _get_reward(self, state):
+    def _get_reward(self):
+
+        state = self.current_state[0]
+
         if self.reward == GemelEnv.Reward.PLACING:
             sims = self._hosts_sorted_by_id
             reward_ = 0
@@ -236,15 +285,24 @@ class GemelEnv(gym.Env):
         self._init_net_info()
         self._reset_all_hosts_vnet()
         self.current_step = 1
-        return self._get_state()
+        self.current_state = self._get_state()
+        return self.current_state
 
     def render(self, mode='human', close=False):
         pass
 
 
 if __name__ == "__main__":
-    env = GemelEnv(interval=20)
+    env = GemelEnv(interval=20, actions=GemelEnv.ActionSpace.DOUBLE_BUTTON)
+    env.reset()
     pprint(env.state())
+    env.step(1)
+    pprint(env.state())
+    env.step(3)
+    pprint(env.state())
+    env.step(0)
+    pprint(env.state())
+
 
 
 
