@@ -14,7 +14,7 @@
 # 
 # **Reward**: XNOR of current VN state and desired state (dumb)
 
-# In[14]:
+# In[1]:
 
 
 from bella.ciao import GemelEnv
@@ -38,7 +38,7 @@ from keras.backend import tensorflow_backend as K
 from IPython.core.display import display, HTML, clear_output
 
 
-# In[5]:
+# In[2]:
 
 
 EPSILON = 0.1
@@ -46,7 +46,7 @@ EXPLORATION_DECAY = 0.99
 GAMMA = 0.99
 
 
-# In[6]:
+# In[3]:
 
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
@@ -73,7 +73,7 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
 
 # ## DQN Agent
 
-# In[9]:
+# In[4]:
 
 
 class DQNAgent:
@@ -123,7 +123,7 @@ class DQNAgent:
         elif self.state_mode == DQNAgent.StateModel.IDS:
             return np.concatenate((state[0], state[1].flatten()))
         else:
-            raise Exception()
+            raise Exception(f"state model {self.state_mode} unknown")
 
     def train(self):
 
@@ -206,6 +206,7 @@ class DQNAgent:
             
             # apply exploration decay
             self.epsilon *= self.epsilon_dacay
+            print(f"Epsilon reduced to {self.epsilon}")
 
         return histories
 
@@ -648,8 +649,7 @@ def create_model_11(env):
         env.action_space.n,
         activation="linear",
     ))
-    
-    model.compile(loss="mse", optimizer=Adam(lr=0.01))
+        model.compile(loss="mse", optimizer=Adam(lr=0.01))
     model.summary()
     
     return model
@@ -720,11 +720,12 @@ plt.plot([x['reward'] for x in hist[0]])
 
 # ## Experiment 012
 
-# In[42]:
+# In[56]:
 
 
 def create_model_12(env):
     model = Sequential()
+    print(f"Input shape={env.observation_shape()}\n\n")
     model.add(Dense(4, activation="relu", input_shape=env.observation_shape()))
     model.add(Dense(4, activation="relu"))
     model.add(Dense(env.action_space.n, activation="linear"))
@@ -733,40 +734,168 @@ def create_model_12(env):
     return model
 
 
-# In[44]:
+# In[57]:
 
+
+model=create_model_12(env)
 
 env = GemelEnv(interval=10, max_steps=200)
 env.reset()
 env.observation_shape()
 
-# agent = DQNAgent(env, max_eps=1, period=5, state_mode=DQNAgent.StateModel.IDS, gamma=0.8, model=create_model_11(env))
-# hist = agent.train()
+agent = DQNAgent(env, max_eps=1, period=5, state_mode=DQNAgent.StateModel.IDS, gamma=0.8, model=model)
+hist = agent.train()
 
-# hist
+hist
 
 
-# In[ ]:
+# In[58]:
 
 
 ticks = [idx for idx, x in enumerate(hist[0]) if x["random"]]
-
-for xc in ticks:
-    plt.axvline(x=xc, color='y')
-
+for xc in ticks: plt.axvline(x=xc, color='y')
 plt.plot([x['reward'] for x in hist[0]])
+
+
+# In[59]:
+
+
+K.set_value(agent.model.optimizer.lr, 0.001)
+agent.env.max_steps = 500
+hist = agent.train()
+
+
+# In[61]:
+
+
+ticks = [idx for idx, x in enumerate(hist[0]) if x["random"]]
+for xc in ticks: plt.axvline(x=xc, color='y')
+plt.plot([x['reward'] for x in hist[0]])
+
+
+# In[62]:
+
+
+K.set_value(agent.model.optimizer.lr, 0.0001)
+agent.env.max_steps = 500
+hist = agent.train()
+
+
+# In[63]:
+
+
+ticks = [idx for idx, x in enumerate(hist[0]) if x["random"]]
+for xc in ticks: plt.axvline(x=xc, color='y')
+plt.plot([x['reward'] for x in hist[0]])
+
+
+# Disappointing.
+
+# ## Experiment 013
+
+# Let's try the "Double Button" state model.
+
+# In[5]:
+
+
+def create_model_13(env):
+    model = Sequential()
+    print(f"Input shape={env.observation_shape()}\n\n")
+    model.add(Dense(4, activation="relu", input_shape=env.observation_shape()))
+    # model.add(Dense(4, activation="relu"))
+    model.add(Dense(env.action_space.n, activation="linear"))
+    model.compile(loss="mse", optimizer=Adam(lr=0.01))
+    model.summary()    
+    return model
+
+
+# In[8]:
+
+
+env = GemelEnv(interval=10, max_steps=200, actions=GemelEnv.ActionSpace.DOUBLE_BUTTON)
+env.reset()
+env.observation_shape()
+
+model=create_model_13(env)
+
+agent = DQNAgent(env, max_eps=1, period=5, state_mode=DQNAgent.StateModel.IDS, gamma=0.8, model=model, epsilon_decay=0.9)
+hist = agent.train()
+
+hist
+
+
+# In[9]:
+
+
+ticks = [idx for idx, x in enumerate(hist[0]) if x["random"]]
+for xc in ticks: plt.axvline(x=xc, color='y')
+plt.plot([x['reward'] for x in hist[0]])
+
+
+# In[10]:
+
+
+env.max_setps = 50
+agent.max_episodes = 6
+agent.train()
+
+
+# In[11]:
+
+
+env.max_setps = 50
+agent.max_episodes = 1
+hist = agent.train()
+
+
+# In[12]:
+
+
+ticks = [idx for idx, x in enumerate(hist[0]) if x["random"]]
+for xc in ticks: plt.axvline(x=xc, color='y')
+plt.plot([x['reward'] for x in hist[0]])
+
+
+# This definitely looks better
+
+# In[22]:
+
+
+model.epsilon_decay = 0.8
+env.max_setps = 50
+agent.max_episodes = 2
+hist = agent.train()
+
+
+# In[21]:
+
+
+flat_hist = [x for h in hist for x in h]
+ticks = [idx for idx, x in enumerate(flat_hist) if x["random"]]
+for xc in ticks: plt.axvline(x=xc, color='y')
+plt.plot([x['reward'] for x in flat_hist])
+
+
+# In[23]:
+
+
+model.epsilon_decay = 0.8
+env.max_setps = 50
+agent.max_episodes = 1
+agent.epsilon = 0.01
+hist = agent.train()
 
 
 # <br/>
 
-# In[ ]:
+# In[24]:
 
 
 display(HTML("""<img width="300px" src="https://i.pinimg.com/originals/04/fa/41/04fa41ddc000ba75de7bce263b8ac469.jpg" />"""))
 
 time.sleep(7)
 
-clear_output()
+# clear_output()
 
 print("Done.")
 
