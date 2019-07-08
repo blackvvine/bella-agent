@@ -30,10 +30,15 @@ class GemelEnv(gym.Env):
 
     class ActionSpace(enum.Enum):
 
-        # having one toggle button per host
+        # having one toggle button per host:
+        # actions are integers from 0 to N, N being NOP and i<N being
+        # toggle host #i's VN
         TOGGLE = 0
 
-        # having two buttons per host for increase/decrease security
+        # having two buttons per host for increase/decrease security:
+        # actions are integers from 0 to 2*N-1, 2*N-1 being NOP
+        # 2i being lower the security for host #i, 2i+1 being
+        # raise the security level for host #i
         DOUBLE_BUTTON = 1
 
     def __init__(self, reward=Reward.PLACING,
