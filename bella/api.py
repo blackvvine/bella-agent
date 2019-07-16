@@ -20,6 +20,9 @@ class ApiWrapper(object):
     VNETS_SET = HALSEY_BASE_URL + "/v1/vnet/set"
     VNETS_LIST = HALSEY_BASE_URL + "/v1/vnet/list"
 
+    SIM_QOS_STATS = HALSEY_BASE_URL + "/v1/sim/qos"
+    SIM_ATTACK_STATS = HALSEY_BASE_URL + "/v1/sim/attack"
+
     @classmethod
     def get_events(cls, interval=60):
         """
@@ -54,5 +57,13 @@ class ApiWrapper(object):
     @classmethod
     def set_vnet(cls, mac, vnet):
         return requests.get(cls.VNETS_SET, {'host': mac, 'vnet': vnet}).json()
+
+    @classmethod
+    def sim_qos_stats(cls):
+        return requests.get(cls.SIM_QOS_STATS).json()
+
+    @classmethod
+    def sim_attack_stats(cls):
+        return requests.get(cls.SIM_ATTACK_STATS).json()
 
 

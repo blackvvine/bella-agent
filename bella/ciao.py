@@ -2,14 +2,20 @@
 import enum
 import re
 import gym
+import logging
 import numpy as np
 
 from gym.spaces import Discrete
-
 from pprint import pprint
 
 from bella.api import ApiWrapper
 from bella.config import MAX_ALERTS_PER_HOST, MAX_STEPS_PER_EPISODE
+
+FORMAT = '%(asctime)s - %(name)s %(levelname)s - %(message)s'
+logging.basicConfig(format=FORMAT)
+
+logger = logging.getLogger("SYN-flood-stats")
+logger.setLevel(logging.DEBUG)
 
 
 class GemelState(object):
@@ -27,6 +33,9 @@ class GemelEnv(gym.Env):
 
         # reward based on ground truth
         PLACING = 1
+        
+        # reward based on stats and qos
+        QOS_ASR = 2
 
     class ActionSpace(enum.Enum):
 
@@ -255,18 +264,35 @@ class GemelEnv(gym.Env):
 
         return (self.current_state, self._get_reward(), self._is_terminal())
 
+    def _get_qos_asr_reward(self):
+        asr = ApiWrapper.sim_attack_stats()
+        qos = ApiWrapper.sim_qos_stats()
+        m_qos = np.average([a["taskDuration"] for a in qos])
+        m_asr = np.average([a["ratio"] for a in asr])
+        res = m_qos / 10.0 - m_asr
+
+        logger.debug(f"QoS-ASR reward qos={m_qos} asr={m_asr} res={res}")
+
+        return res
+
+    def _get_placing_reward(self, state):
+        sims = self._hosts_sorted_by_id
+        reward_ = 0
+        for idx, vnet_id in enumerate(state):
+            host = sims[idx]
+            vnet = self.vnets[vnet_id]
+            reward_ += (-1 if host["type"] == "benign" else +1) * vnet["security_level"]
+        return reward_
+
     def _get_reward(self):
 
-        state = self.current_state[0]
-
         if self.reward == GemelEnv.Reward.PLACING:
-            sims = self._hosts_sorted_by_id
-            reward_ = 0
-            for idx, vnet_id in enumerate(state):
-                host = sims[idx]
-                vnet = self.vnets[vnet_id]
-                reward_ += (-1 if host["type"] == "benign" else +1) * vnet["security_level"]
-            return reward_
+            state = self.current_state[0]
+            return self._get_placing_reward(state)
+
+        if self.reward == GemelEnv.Reward.QOS_ASR:
+            return self._get_qos_asr_reward()
+
         else:
             raise Exception(f"Unknown reward scheme {self.reward}")
 
@@ -293,15 +319,20 @@ class GemelEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    env = GemelEnv(interval=20, actions=GemelEnv.ActionSpace.DOUBLE_BUTTON)
-    env.reset()
-    pprint(env.state())
-    env.step(1)
-    pprint(env.state())
-    env.step(3)
-    pprint(env.state())
-    env.step(0)
-    pprint(env.state())
+    env = GemelEnv(
+        interval=20,
+        actions=GemelEnv.ActionSpace.DOUBLE_BUTTON,
+        reward=GemelEnv.Reward.QOS_ASR,
+    )
+    state = env.reset()
+    _, reward, _ = env.step(4)
+    # pprint(env.state())
+    # env.step(1)
+    # pprint(env.state())
+    # env.step(3)
+    # pprint(env.state())
+    # env.step(0)
+    # pprint(env.state())
 
 
 
