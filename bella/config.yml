@@ -1,6 +1,6 @@
 ---
 
-base-url: http://halsey.einstein.eeman.me:8080
+base-url: http://localhost:8070
 
 max-alerts-per-host: 10
 

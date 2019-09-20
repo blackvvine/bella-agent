@@ -209,6 +209,7 @@ class GemelEnv(gym.Env):
         Moves all hosts to the initial virtual-net (lowest security)
         """
         for host in self._hosts_sorted_by_id:
+                logger.info("Moving host %s to vnet %s", host["mac"], self.vnets[0]["name"])
                 ApiWrapper.set_vnet(host["mac"], self.vnets[0]["name"])
 
     def _apply_action(self, action):
