@@ -2,6 +2,7 @@
 import enum
 import re
 import gym
+import time
 import logging
 import numpy as np
 
@@ -16,6 +17,15 @@ logging.basicConfig(format=FORMAT)
 
 logger = logging.getLogger("SYN-flood-stats")
 logger.setLevel(logging.DEBUG)
+
+
+LOSS_PENALTY = -10 ** 5
+
+
+class IllegalAction(Exception):
+
+    def __init__(self):
+        super(IllegalAction, self).__init__()
 
 
 class GemelState(object):
@@ -53,13 +63,22 @@ class GemelEnv(gym.Env):
     def __init__(self, reward=Reward.PLACING,
                  actions=ActionSpace.TOGGLE,
                  max_steps=MAX_STEPS_PER_EPISODE,
-                 max_alerts=MAX_ALERTS_PER_HOST, interval=10):
+                 max_alerts=MAX_ALERTS_PER_HOST,
+                 interval=10,
+                 lose_on_void_action=False,
+                 step_sleep=0,
+                 loss_penalty=LOSS_PENALTY):
 
         self.simulations = None
         self.ip_id_map = None
         self.arp_table = None
         self.known_alerts = None
+        self.cached_state = None
         self.vnets = None
+
+        self.lose_on_void_action = lose_on_void_action
+        self.step_sleep = step_sleep
+        self.loss_penalty = loss_penalty
 
         self.actions = actions
         self.reward = reward
@@ -160,7 +179,9 @@ class GemelEnv(gym.Env):
         return np.asarray([vnet_names.index(name) for name in sorted_list])
 
     def _get_state(self):
-        return self._get_vnet_status(), self._get_ids_observations()
+        res = (self._get_vnet_status(), self._get_ids_observations())
+        self.cached_state = res
+        return res
 
     def _init_net_info(self):
         """
@@ -209,17 +230,31 @@ class GemelEnv(gym.Env):
         Moves all hosts to the initial virtual-net (lowest security)
         """
         for host in self._hosts_sorted_by_id:
-                logger.info("Moving host %s to vnet %s", host["mac"], self.vnets[0]["name"])
+                # logger.info("Moving host %s to vnet %s", host["mac"], self.vnets[0]["name"])
                 ApiWrapper.set_vnet(host["mac"], self.vnets[0]["name"])
 
     def _apply_action(self, action):
+        """
+        performs the given action code on the environment
+
+        :param action: number of action to take
+        :return: whether action was illegal
+        """
+
+        action_void = False
 
         if self.actions == GemelEnv.ActionSpace.TOGGLE:
+
+            if action >= self.action_space.n - 1:
+                return False
 
             sims = self._hosts_sorted_by_id
             ApiWrapper.toggle(sims[action]["mac"])
 
         elif self.actions == GemelEnv.ActionSpace.DOUBLE_BUTTON:
+
+            if action >= self.action_space.n - 1:
+                return False
 
             target_host = action // 2
             more_security = bool(action % 2)
@@ -229,12 +264,18 @@ class GemelEnv(gym.Env):
             if more_security:
                 if _host_cur_vn != len(self.vnets) - 1:
                     ApiWrapper.set_vnet(self._hosts_sorted_by_id[target_host]["mac"], self.vnets[_host_cur_vn + 1]["name"])
+                else:
+                    action_void = True
             else:
                 if _host_cur_vn > 0:
                     ApiWrapper.set_vnet(self._hosts_sorted_by_id[target_host]["mac"], self.vnets[_host_cur_vn - 1]["name"])
+                else:
+                    action_void = True
 
         else:
-            raise Exception()
+            raise Exception("Unknown action-set: {}".format(self.actions))
+
+        return action_void
 
     def _is_terminal(self):
         """
@@ -259,12 +300,21 @@ class GemelEnv(gym.Env):
 
         assert isinstance(action, int)
 
+        assert self.cached_state is not None
+
+        # keep current state
+        # ex_state = self.cached_state
+
         self.current_step += 1
 
-        # the non-NOP action
-        if action < self.action_space.n - 1:
-            # apply the toggle action
-            self._apply_action(action)
+        # apply the toggle action
+        was_void = self._apply_action(action)
+
+        if self.lose_on_void_action and was_void:
+            self.current_state = self._get_state()
+            return (self.current_state, self.loss_penalty, True)
+
+        time.sleep(self.step_sleep)
 
         self.current_state = self._get_state()
 
@@ -314,8 +364,14 @@ class GemelEnv(gym.Env):
         return self._get_state()
 
     def reset(self):
+
+        # reset state
         self._init_net_info()
         self._reset_all_hosts_vnet()
+
+        # wait so that changes are reflected in state
+        time.sleep(self.step_sleep)
+
         self.current_step = 1
         self.current_state = self._get_state()
         return self.current_state
